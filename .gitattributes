@@ -1,0 +1,24 @@
+# LEARN: Windows checks out files with CRLF line endings by default. When a
+# shell script written on Windows is mounted into a Linux container, the bash
+# inside the container chokes on "\r" characters with the cryptic error
+# "/bin/sh^M: bad interpreter". This file forces LF endings for any file that
+# runs inside a Linux container, regardless of the host OS the dev is on.
+
+# Default: let Git auto-detect (text files normalized to LF in repo)
+* text=auto eol=lf
+
+# Force LF for files executed inside Linux containers
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+
+# Binary files — never touch
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+*.parquet binary
+*.pkl  binary
+*.pt   binary
+*.onnx binary

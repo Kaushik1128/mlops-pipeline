@@ -1,0 +1,373 @@
+# =============================================================================
+# Local MLOps stack — MinIO, Postgres, MLflow, Prefect.
+#
+# Usage:
+#   1. cp .env.example .env  (and fill in values)
+#   2. docker compose up -d
+#   3. docker compose ps      (verify all services healthy)
+#   4. docker compose down    (stop; keeps volumes)
+#   5. docker compose down -v (stop AND delete volumes — full reset)
+#
+# This file currently defines plumbing only (networks + volumes).
+# Services arrive in subsequent steps of Phase 1.
+# =============================================================================
+
+# LEARN: The top-level `version:` key was REQUIRED in Compose v1 and is now
+# OBSOLETE in Compose v2 (which is what ships with Docker Desktop today).
+# Including it triggers a deprecation warning. We deliberately omit it.
+
+name: mlops-pipeline
+# LEARN: Sets the project name explicitly. Without this, Compose uses the
+# parent directory name. Setting it makes `docker compose ps`, `down`, etc.
+# behave identically no matter what directory you ran the command from.
+
+# -----------------------------------------------------------------------------
+# Services
+# -----------------------------------------------------------------------------
+services:
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible object storage
+  # Holds model artifacts, datasets, drift reports. Anything boto3 can read
+  # from real AWS S3, our code can read from here.
+  # ---------------------------------------------------------------------------
+  minio:
+    # LEARN: Pin to a specific RELEASE tag. NEVER use :latest in a Compose
+    # file you intend to share — your stack's behavior will silently change
+    # the next time a new image is pushed. To update: pick a newer tag from
+    # https://hub.docker.com/r/minio/minio/tags and bump deliberately.
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+
+    # LEARN: Without container_name, Compose generates one like
+    # `mlops-pipeline-minio-1`. We set a stable name so `docker logs mlops-minio`
+    # is predictable. Downside: you can't scale this service to >1 replica
+    # (which we don't want anyway for a stateful object store).
+    container_name: mlops-minio
+
+    restart: unless-stopped
+    # LEARN: `unless-stopped` = restart on crash, but if you `docker compose stop`
+    # it stays stopped. `always` would fight you. `no` means a crashed container
+    # silently disappears from your stack.
+
+    networks:
+      - mlops-net
+
+    ports:
+      # LEARN: Format is "HOST:CONTAINER". Left number = port on YOUR machine,
+      # right number = port inside the container. Mismatching them is fine
+      # ("9999:9000" would let you reach MinIO at localhost:9999 even though
+      # the server inside listens on 9000) — but a mismatch can confuse you
+      # later, so we keep them identical when there's no conflict.
+      - "9000:9000"  # S3 API — what boto3 / MLflow talk to
+      - "9001:9001"  # Web console — what humans click around in
+
+    environment:
+      # LEARN: ${VAR} pulls from the .env file at compose-up time (or from
+      # your shell env if exported). Listing them explicitly here documents
+      # exactly which env vars this service requires — using `env_file:`
+      # instead would inject everything in .env, which can leak vars.
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+    volumes:
+      # LEARN: Named volume `minio_data` (declared at file bottom) mounts to
+      # /data inside the container. MinIO will store every S3 object as a file
+      # in /data. The volume persists across `docker compose down`; only
+      # `docker compose down -v` deletes it.
+      - minio_data:/data
+
+    # LEARN: The default MinIO image entrypoint is `minio` — we override its
+    # ARGUMENTS to run in server mode against /data, AND give the web console
+    # a fixed port. Without --console-address the console picks a random
+    # high port on each restart, which is awful to deal with.
+    command: server /data --console-address ":9001"
+
+    healthcheck:
+      # LEARN: `mc ready local` is MinIO's own readiness probe (mc is bundled
+      # inside the image). It returns success only when the S3 API is actually
+      # answering. Later services will use `depends_on: condition: service_healthy`
+      # to wait for THIS check to pass — not just "container started" but
+      # "MinIO is actually ready to serve requests".
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+      # LEARN: `start_period` is a grace window after container start where
+      # failed healthchecks DON'T count against `retries`. Useful for slow-
+      # booting apps; MinIO is fast, but 10s costs us nothing.
+
+  # ---------------------------------------------------------------------------
+  # Postgres — MLflow's metadata backend (runs, params, metrics, registry)
+  # ---------------------------------------------------------------------------
+  postgres:
+    # LEARN: Pin to major version 16. The `-alpine` variant is ~80 MB vs
+    # ~400 MB for the default Debian image; Postgres-on-Alpine is officially
+    # supported and behaves identically for our workload.
+    image: postgres:16-alpine
+    container_name: mlops-postgres
+    restart: unless-stopped
+
+    networks:
+      - mlops-net
+
+    # LEARN: Deliberately NO `ports:` block. Postgres is reachable only by
+    # other containers on `mlops-net` (via hostname `postgres`, port 5432).
+    # Publishing 5432 to the host would open a brute-forceable database port
+    # on your laptop with no benefit — nothing on the host needs to talk to
+    # it directly. To poke at the DB, use:
+    #     docker compose exec postgres psql -U mlflow
+
+    environment:
+      # LEARN: The official postgres image creates this user, password, and
+      # database on FIRST start. After that the env vars are IGNORED —
+      # changing POSTGRES_PASSWORD in .env later will NOT change the actual
+      # password. To truly reset credentials you must delete the volume:
+      #     docker compose down -v   (NUKES ALL DATA — careful)
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    volumes:
+      # LEARN: Postgres stores its data directory here. The path
+      # /var/lib/postgresql/data is hard-coded into the official image; we
+      # mount our named volume on top of it so the data survives container
+      # restarts and image upgrades.
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      # LEARN: `pg_isready` is bundled in the image and returns 0 only when
+      # Postgres is actually accepting connections (not just "process started").
+      # We pass -U/-d to test the SPECIFIC user/db MLflow will use — a generic
+      # check could pass before our role is created.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # createbuckets — one-shot init container. Creates the MLflow artifact
+  # bucket in MinIO, then exits. MLflow depends on this completing.
+  # ---------------------------------------------------------------------------
+  createbuckets:
+    # LEARN: The minio/mc image is MinIO's CLI client packaged on its own —
+    # tiny (~30 MB) and the right tool for scripted bucket setup.
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    container_name: mlops-createbuckets
+    depends_on:
+      minio:
+        condition: service_healthy
+        # LEARN: Modern `depends_on` syntax. The legacy form
+        # (just listing service names) only waits for container start, not
+        # readiness. `service_healthy` waits until the MinIO healthcheck
+        # we wrote earlier actually passes.
+    networks:
+      - mlops-net
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_ARTIFACT_BUCKET: ${MLFLOW_ARTIFACT_BUCKET}
+      DVC_STORAGE_BUCKET: ${DVC_STORAGE_BUCKET}
+    # LEARN: `entrypoint: /bin/sh -c "..."` overrides the default mc entrypoint
+    # so we can run a multi-step shell script inline. The script:
+    #   1) Sets an alias `local` pointing at our MinIO server (using the
+    #      service-name DNS we got from custom networking).
+    #   2) Creates the bucket. --ignore-existing makes the call idempotent —
+    #      safe to run repeatedly without erroring on subsequent boots.
+    #   3) Exits 0.
+    # `set -e` aborts on any command failure so the container exits non-zero
+    # if MinIO setup fails — which would block MLflow from starting.
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/$${MLFLOW_ARTIFACT_BUCKET};
+      mc mb --ignore-existing local/$${DVC_STORAGE_BUCKET};
+      echo 'Bucket ready: '$${MLFLOW_ARTIFACT_BUCKET};
+      "
+    # LEARN: The $$ before each env var is intentional. Compose does its own
+    # variable substitution at parse time; we want the shell INSIDE the
+    # container to see the literal `${VAR}` and resolve it from the
+    # environment block above. $$ escapes the $ from Compose's first pass.
+
+    restart: "no"
+    # LEARN: This is a one-shot job. `no` means: run once, never restart.
+    # Other services use `unless-stopped` because they're long-lived.
+
+  # ---------------------------------------------------------------------------
+  # MLflow tracking server
+  # Metadata → Postgres, artifacts → MinIO. The single most "interview-visible"
+  # piece of this whole stack.
+  # ---------------------------------------------------------------------------
+  mlflow:
+    # LEARN: `build:` instead of `image:` — Compose builds our custom image
+    # from the Dockerfile at startup. `context` is the directory the COPY
+    # commands in the Dockerfile are relative to.
+    build:
+      context: ./docker/mlflow
+      dockerfile: Dockerfile
+
+    # LEARN: `image:` here NAMES the image Compose builds. Without this, the
+    # image gets a Compose-generated name like `mlops-pipeline-mlflow`.
+    # Naming it explicitly means we can pull/push it to a registry later.
+    image: mlops-pipeline/mlflow:0.1.0
+
+    container_name: mlops-mlflow
+    restart: unless-stopped
+    networks:
+      - mlops-net
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+        # LEARN: Two conditions, two semantics:
+        #   service_healthy             — wait until healthcheck passes
+        #   service_completed_successfully — wait until container exits with 0
+        # We need BOTH before MLflow starts. If createbuckets exited non-zero
+        # (e.g. MinIO unreachable), Compose would refuse to start MLflow at all.
+
+    ports:
+      - "5000:5000"
+      # LEARN: Exposed to host because humans use the MLflow UI in a browser.
+
+    environment:
+      # The MLflow server needs S3 credentials to write artifacts to MinIO on
+      # behalf of clients (proxy mode). Clients themselves don't need these.
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      # LEARN: boto3 uses AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY by
+      # convention. We feed it our MinIO root credentials — to boto3, MinIO
+      # is just an S3 endpoint at a non-AWS URL.
+
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      --artifacts-destination s3://${MLFLOW_ARTIFACT_BUCKET}/
+      --serve-artifacts
+      --host 0.0.0.0
+      --port 5000
+    # LEARN: Three important flags:
+    #   --backend-store-uri      → Postgres connection string (metadata)
+    #   --artifacts-destination  → where the SERVER writes artifacts (S3 / MinIO)
+    #   --serve-artifacts        → enables proxy mode: clients send artifacts
+    #                              to MLflow over HTTP; MLflow writes to S3.
+    #   --host 0.0.0.0           → listen on all interfaces. Default 127.0.0.1
+    #                              would only accept connections from INSIDE
+    #                              the container — invisible to your host.
+
+    healthcheck:
+      # MLflow's UI root returns 200 OK once the server is ready.
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      # LEARN: 30s start_period because MLflow startup includes running
+      # database migrations against Postgres on first boot (the
+      # `mlflow_*` tables get created), which is the slowest part.
+
+  # ---------------------------------------------------------------------------
+  # Prefect server — workflow orchestration. Empty for now (no flows yet);
+  # Phase 6 will register the retraining and drift-check flows here.
+  # ---------------------------------------------------------------------------
+  prefect:
+    image: prefecthq/prefect:3.1.5-python3.11
+    container_name: mlops-prefect
+    restart: unless-stopped
+    networks:
+      - mlops-net
+
+    ports:
+      - "4200:4200"
+      # LEARN: Exposed to host because (a) humans need the Prefect UI in a
+      # browser and (b) training code running on YOUR host (Phase 3) will
+      # eventually call into the API to register flows.
+
+    environment:
+      # LEARN: PREFECT_HOME is the on-disk directory Prefect uses for its
+      # SQLite DB and other state. Default is ~/.prefect inside the container,
+      # which would die on restart. Pointing it at /data routes everything
+      # into our `prefect_data` named volume.
+      PREFECT_HOME: /data
+
+      # LEARN: Server bind address. Defaults to 127.0.0.1 (loopback only).
+      # Same lesson as MLflow's --host 0.0.0.0 — without this, the server
+      # would be invisible to anything outside the container, including
+      # your host browser.
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+
+      # LEARN: The URL the UI (and any client) uses to reach the API. This
+      # value is embedded into the JS bundle the server sends to the browser,
+      # so it MUST be a URL the browser can resolve. `localhost:4200/api`
+      # works because:
+      #   - From the browser on your host: localhost:4200 is the port we
+      #     published with `ports: 4200:4200`.
+      #   - From inside this container itself: localhost:4200 is the API's
+      #     own loopback address (the server listens on 0.0.0.0:4200).
+      # We canNOT use `prefect:4200` here — that hostname only resolves
+      # inside the Docker network, so the browser would fail DNS lookup.
+      # In Phase 6 a Prefect WORKER container will use http://prefect:4200/api
+      # because the worker lives on mlops-net. Different consumer, different URL.
+      PREFECT_API_URL: http://localhost:4200/api
+
+    volumes:
+      - prefect_data:/data
+
+    command: prefect server start --host 0.0.0.0
+    # LEARN: `prefect server start` boots the API + UI. --host duplicates the
+    # PREFECT_SERVER_API_HOST env var — either is sufficient; both is belt
+    # and braces.
+
+    healthcheck:
+      # LEARN: Prefect exposes /api/health, which returns {"status": "healthy"}
+      # once the API is ready to accept requests.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+      # LEARN: Python one-liner instead of curl because the prefecthq image
+      # doesn't bundle curl, but we KNOW Python is in there (it's how Prefect
+      # itself runs). Avoids installing curl just for a healthcheck.
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  mlops-net:
+    driver: bridge
+    # LEARN: A user-defined bridge network gives us two things the default
+    # bridge does NOT:
+    #   1. Automatic DNS — services reach each other by service name. Our
+    #      MLflow container will literally use the hostname `postgres` to
+    #      reach the Postgres container. No IPs, no --link.
+    #   2. Project isolation — other Compose stacks on this machine cannot
+    #      see into this network, and vice versa.
+
+# -----------------------------------------------------------------------------
+# Volumes — named volumes for state that must survive container restarts.
+# -----------------------------------------------------------------------------
+volumes:
+  minio_data:
+    # LEARN: MinIO stores the actual S3 objects (model artifacts, datasets,
+    # drift reports) here. Named volume, not bind mount, because object
+    # storage is I/O heavy and named volumes are much faster on Windows
+    # (they live inside WSL2's ext4 filesystem, no path translation).
+
+  postgres_data:
+    # MLflow's metadata DB (runs, params, metrics, model registry).
+    # Same reasoning: DBs are I/O sensitive, named volume wins.
+
+  prefect_data:
+    # Prefect server's SQLite DB (Phase 6 will use this for flow run history).
+    # We declare it now so Phase 6 doesn't require Compose-file surgery.
+
+# NOTE: Deliberately NO `mlflow_data` volume. MLflow itself is stateless in
+# this design — its metadata lives in `postgres_data`, its artifacts live in
+# `minio_data`. That separation is the whole point. If we added a third
+# volume here we'd be hinting that MLflow stores something locally, which
+# would be misleading.

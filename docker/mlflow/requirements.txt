@@ -1,0 +1,16 @@
+# Python dependencies for the MLflow tracking server container.
+# Pinned for reproducibility — bump deliberately, not by accident.
+
+mlflow==2.18.0
+# Pin major+minor+patch. MLflow 2.x has been making meaningful schema and
+# API changes between minor versions; floating to 2.x.x risks subtle drift.
+
+psycopg2-binary==2.9.9
+# Postgres client. The "-binary" variant ships a precompiled wheel so we
+# don't need gcc / libpq-dev installed in the image. (The non-binary
+# `psycopg2` package compiles from source and balloons image size.)
+
+boto3==1.35.0
+# AWS SDK for Python — talks to S3, and since MinIO speaks the S3 API,
+# boto3 talks to MinIO. We point it at MinIO via the MLFLOW_S3_ENDPOINT_URL
+# env var (set in the compose service definition).

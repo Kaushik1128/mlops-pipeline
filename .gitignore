@@ -1,0 +1,93 @@
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual envs — created locally, never committed
+.venv/
+venv/
+env/
+.python-version
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/*-checkpoint.ipynb
+
+# =============================================================================
+# Secrets — NEVER commit .env. .env.example is the safe, committed template.
+# =============================================================================
+.env
+.env.local
+*.pem
+*.key
+
+# =============================================================================
+# Data — tracked by DVC (Phase 2), not Git.
+# We keep the directories themselves (via .gitkeep) so the layout is visible,
+# but ignore the actual files. DVC will add its own .gitignore inside data/raw
+# pointing at the specific files it manages.
+# =============================================================================
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# =============================================================================
+# MLflow local fallback
+# When MLflow is misconfigured it falls back to writing a ./mlruns folder in
+# whatever directory you ran from. Ignore it so a stray run doesn't pollute git.
+# =============================================================================
+mlruns/
+mlartifacts/
+
+# =============================================================================
+# DVC internals
+# =============================================================================
+.dvc/cache
+.dvc/tmp
+.dvc/plots
+
+# =============================================================================
+# BentoML local store (Phase 4)
+# =============================================================================
+bentoml/
+
+# =============================================================================
+# OS files
+# =============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Editors / Tools
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code local metadata — settings.json, session info. Per-developer,
+# not part of the project.
+.claude/
+
+# =============================================================================
+# Docker
+# Local override file — convention is to allow developers to override compose
+# settings without committing personal changes.
+# =============================================================================
+docker-compose.override.yml
+
+# =============================================================================
+# Misc
+# =============================================================================
+*.log
+.cache/

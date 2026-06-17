@@ -39,6 +39,9 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+# DVC pointer files MUST be tracked — they're how Git records the data version.
+!data/raw/*.dvc
+!data/processed/*.dvc
 
 # =============================================================================
 # MLflow local fallback

@@ -1,0 +1,51 @@
+# =============================================================================
+# Project Python dependencies (host venv — NOT the MLflow container).
+# Pinned for reproducibility. Bump deliberately.
+#
+# Install:
+#   python -m venv .venv
+#   .venv\Scripts\Activate.ps1
+#   pip install -r requirements.txt
+# =============================================================================
+
+# --- Core data + numerics ---
+pandas==2.2.3
+numpy==2.1.3
+pyarrow==18.1.0
+# pyarrow gives us Parquet read/write. Parquet is ~5x smaller than CSV and
+# preserves dtypes — better than CSV for any non-trivial ML pipeline.
+
+# --- Modeling ---
+scikit-learn==1.6.0
+imbalanced-learn==0.13.0
+# imbalanced-learn for SMOTE + other resampling. We'll need it in Phase 3
+# because 0.17% fraud means a default classifier will trivially "predict
+# zero" and score 99.83% accuracy while detecting no fraud.
+
+# --- Experiment tracking client ---
+mlflow==2.18.0
+# Same version as the server in docker/mlflow/. The client just makes HTTP
+# calls to http://localhost:5000 — Python version on each side is independent.
+
+# --- Data versioning ---
+dvc[s3]==3.58.0
+# dvc[s3] = DVC + the s3 extras (boto3 driver). MinIO speaks S3, so this is
+# what we need to push/pull data through MinIO.
+
+pathspec==0.12.1
+# DVC 3.58 imports an internal symbol (_DIR_MARK) from pathspec that was
+# removed in pathspec 1.x. Pin to the 0.12 line until DVC catches up.
+# Without this, `dvc init` errors with "cannot import name '_DIR_MARK'".
+
+# --- Visualization (notebooks) ---
+matplotlib==3.10.0
+seaborn==0.13.2
+
+# --- Notebook environment ---
+jupyterlab==4.3.4
+ipywidgets==8.1.5
+
+# --- Misc utilities ---
+python-dotenv==1.0.1
+# python-dotenv lets our Python scripts read the .env file (same one Compose
+# uses) without us having to manually set OS-level env vars.

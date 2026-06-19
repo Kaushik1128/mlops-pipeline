@@ -1,0 +1,5 @@
+outs:
+- md5: 908d423887bacf22d51e822188d7fc0a
+  size: 281771
+  hash: md5
+  path: test_smoke.parquet

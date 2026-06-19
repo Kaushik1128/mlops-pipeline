@@ -32,9 +32,6 @@ RAW_FILE = PROJECT_ROOT / "data" / "raw" / "creditcard.parquet"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 TARGET_COLUMN = "Class"
-# LEARN: Fixed seed makes the split deterministic — same input file, same
-# command, same output bytes. This is what makes the DVC story work: rerun
-# the pipeline on a clean checkout and the hashes match exactly.
 DEFAULT_SEED = 42
 DEFAULT_TEST_SIZE = 0.20
 

@@ -1,0 +1,60 @@
+# =============================================================================
+# Training configuration for Phase 3 model experiments.
+#
+# Read by src/models/train.py. Keeping hyperparameters here (not hardcoded in
+# Python) means every experiment is a config change, not a code change — and
+# MLflow logs exactly what was used. Change a value, rerun, compare in the UI.
+# =============================================================================
+
+# --- Data paths (relative to project root) ---
+data:
+  train: data/processed/train.parquet
+  test: data/processed/test.parquet
+  smoke: data/processed/test_smoke.parquet
+  target_column: Class
+
+# --- MLflow settings ---
+mlflow:
+  # LEARN: This is the URL the CLIENT (this training script, running on your
+  # host) uses to reach the tracking server. localhost:5000 because the
+  # server's port 5000 is published to the host by docker-compose. Inside
+  # the Docker network it would be http://mlflow:5000 — but we run training
+  # from the host, so localhost.
+  tracking_uri: http://localhost:5000
+  # LEARN: Experiments group related runs in the UI. All Phase 3 runs land
+  # under this experiment so they're comparable side by side.
+  experiment_name: fraud-detection
+  # The name under which the best model gets registered in the Model Registry.
+  registered_model_name: fraud-classifier
+
+# --- Reproducibility ---
+seed: 42
+
+# --- Model hyperparameters ---
+# Each top-level key is a model name you pass via `--model <name>`.
+models:
+
+  logistic_regression:
+    # LEARN: class_weight=balanced tells sklearn to weight the loss inversely
+    # to class frequency — so the 0.17% fraud class gets ~577x the weight of
+    # each legit row. This is the linear-model equivalent of XGBoost's
+    # scale_pos_weight. Without it, LogReg minimizes total error by predicting
+    # "legit" for everything.
+    class_weight: balanced
+    C: 1.0              # Inverse regularization strength. Smaller = stronger.
+    max_iter: 1000      # Iterations for the solver to converge.
+    solver: lbfgs       # Good default for this size; handles L2 penalty.
+
+  xgboost:
+    n_estimators: 300       # Number of boosting rounds (trees).
+    max_depth: 5            # Max tree depth. Deeper = more interactions, more overfit risk.
+    learning_rate: 0.1      # Step size shrinkage. Lower needs more trees but generalizes better.
+    subsample: 0.8          # Row sampling per tree — regularization via randomness.
+    colsample_bytree: 0.8   # Column sampling per tree — same idea.
+    eval_metric: aucpr      # LEARN: Optimize for area under PR curve — the right
+                            # metric under extreme imbalance (see EDA notebook).
+    # LEARN: `auto` is a sentinel. The script computes the real value at runtime
+    # as (n_negative / n_positive) from the TRAINING data — ~577 for us. We
+    # don't hardcode 577 because if the data changes (Phase 6 retraining on
+    # fresh data), a hardcoded value would silently go stale. Compute from data.
+    scale_pos_weight: auto

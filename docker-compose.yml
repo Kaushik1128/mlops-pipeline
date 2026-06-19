@@ -245,7 +245,7 @@ services:
 
     command: >
       mlflow server
-      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD_ENCODED}@postgres:5432/${POSTGRES_DB}
       --artifacts-destination s3://${MLFLOW_ARTIFACT_BUCKET}/
       --serve-artifacts
       --host 0.0.0.0

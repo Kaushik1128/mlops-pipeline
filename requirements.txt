@@ -22,6 +22,13 @@ imbalanced-learn==0.13.0
 # because 0.17% fraud means a default classifier will trivially "predict
 # zero" and score 99.83% accuracy while detecting no fraud.
 
+xgboost==3.3.0
+# Gradient-boosted trees — our champion model for tabular fraud data. Has a
+# built-in `scale_pos_weight` parameter designed for class imbalance, which
+# we tune to our ~577:1 ratio in Phase 3.
+# NOTE: must be >=2.1.4 — earlier versions lack sklearn 1.6's __sklearn_tags__
+# API and crash on predict_proba when wrapped in an sklearn Pipeline.
+
 # --- Experiment tracking client ---
 mlflow==2.18.0
 # Same version as the server in docker/mlflow/. The client just makes HTTP

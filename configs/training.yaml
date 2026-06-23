@@ -58,3 +58,10 @@ models:
     # don't hardcode 577 because if the data changes (Phase 6 retraining on
     # fresh data), a hardcoded value would silently go stale. Compute from data.
     scale_pos_weight: auto
+
+  random_forest:
+    n_estimators: 300       # Number of trees in the forest.
+    max_depth: 10           # Max tree depth. Deeper = more interactions, more overfit risk.
+    min_samples_split: 2    # Minimum samples to split a node. Lower = more splits, more overfit risk.
+    min_samples_leaf: 1     # Minimum samples at a leaf node. Lower = more leaves, more overfit risk.
+    class_weight: balanced   # Weight classes inversely to their frequency.

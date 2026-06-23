@@ -161,7 +161,20 @@ def build_pipeline(model_name: str, resolved_params: dict, seed: int):
         # across models (always `pipeline.predict_proba(X)`).
         return Pipeline([("clf", clf)])
 
+    if model_name == "random_forest":
+        from sklearn.ensemble import RandomForestClassifier
+
+        # LEARN: RandomForest is tree-based too → no StandardScaler. It handles
+        # imbalance via class_weight='balanced' (like LogReg), not
+        # scale_pos_weight, so resolve_params leaves its config untouched.
+        clf = RandomForestClassifier(random_state=seed, n_jobs=-1, **resolved_params)
+        return Pipeline([("clf", clf)])
+
+    # LEARN: This raise is the fallthrough for genuinely-unknown models — it
+    # MUST be last, after every real branch, or it makes them unreachable.
     raise ValueError(f"Unknown model: {model_name}")
+
+        
 
 
 def main() -> int:

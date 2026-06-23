@@ -97,20 +97,12 @@ ranks 2nd on PR-AUC — the trap, illustrated.)
 > Capture each from the running stack, save into `assets/screenshots/` with the
 > filename below, then uncomment the embed block under the table.
 
-| # | Capture | Save as | From |
-|---|---|---|---|
-| 1 | MLflow — the 3-run model comparison (sort by `pr_auc`) | `mlflow.png` | http://localhost:5000 |
-| 2 | Grafana — the fraud dashboard with live traffic flowing | `grafana.png` | http://localhost:3001 |
-| 3 | Prefect — an auto-retraining flow run + its task graph | `prefect.png` | http://localhost:4200 |
-| 4 | Swagger — `POST /predict` "Try it out" returning a fraud result | `swagger.png` | http://localhost:3000 |
 
-<!-- Uncomment once the four files are in assets/screenshots/
 | MLflow — experiments & registry | Grafana — live dashboard |
 |---|---|
 | ![MLflow](assets/screenshots/mlflow.png) | ![Grafana](assets/screenshots/grafana.png) |
 | Prefect — auto-retraining flow | BentoML — Swagger API |
 | ![Prefect](assets/screenshots/prefect.png) | ![Swagger](assets/screenshots/swagger.png) |
--->
 
 ---
 

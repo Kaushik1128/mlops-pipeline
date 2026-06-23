@@ -75,6 +75,22 @@
           "legendFormat": "fraud share"
         }
       ]
+    },
+    {
+      "type": "stat",
+      "title": "Total predictions served",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(fraud_predictions_total)",
+          "legendFormat": "total predictions"
+        }
+      ]
     }
   ]
 }

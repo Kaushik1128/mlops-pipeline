@@ -4,7 +4,7 @@
 > model registry, drift detection, and auto-retraining. Built end-to-end as a
 > portfolio project on a fully local, free, Docker-based stack.
 
-**Status: Phase 3 of 8 complete** — model training + MLflow tracking + registry.
+**Status: Phase 4 of 8 complete** — model training, MLflow registry, live serving API.
 A full write-up with architecture diagram and demo recording lands in Phase 8.
 
 ---
@@ -20,7 +20,9 @@ A full write-up with architecture diagram and demo recording lands in Phase 8.
 - [x] **Phase 3 — Model training.** Config-driven training, MLflow experiment
   tracking, reusable evaluation (PR-AUC / F1 / confusion matrix), and model
   registry with alias-based promotion.
-- [ ] **Phase 4 — Model serving** (BentoML)
+- [x] **Phase 4 — Model serving.** Containerized BentoML REST API that imports
+  the `@staging` model from MLflow at startup. Pydantic-validated `/predict`
+  endpoint, auto-generated Swagger docs, and a deploy-time decision threshold.
 - [ ] **Phase 5 — Drift detection** (Evidently AI)
 - [ ] **Phase 6 — Orchestration + auto-retraining** (Prefect)
 - [ ] **Phase 7 — Observability** (Prometheus + Grafana)
@@ -81,12 +83,19 @@ dvc push
 # 4. Train, evaluate, and register a model
 python -m src.models.train --model xgboost
 python -m src.models.register
+
+# 5. Serve it — the fraud-service container imports @staging and serves it
+docker compose up -d --build fraud-service
+curl -X POST http://localhost:3000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"transaction": {"V1": -1.36, ..., "V28": -0.02, "amount": 149.62}}'
 ```
 
 Service UIs (after `docker compose up -d`):
 
 | Service | URL |
 |---|---|
+| **Fraud API + Swagger docs** | **http://localhost:3000** |
 | MLflow (experiments + registry) | http://localhost:5000 |
 | MinIO console (object storage) | http://localhost:9001 |
 | Prefect (orchestration) | http://localhost:4200 |

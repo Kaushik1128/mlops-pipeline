@@ -334,6 +334,52 @@ services:
       # doesn't bundle curl, but we KNOW Python is in there (it's how Prefect
       # itself runs). Avoids installing curl just for a healthcheck.
 
+  # ---------------------------------------------------------------------------
+  # fraud-service — BentoML model server (Phase 4)
+  # Serves the @staging model as a REST API. On startup it imports the current
+  # @staging model from MLflow, then serves it — so a restart picks up a newly
+  # promoted model (handy for Phase 6 auto-retraining).
+  # ---------------------------------------------------------------------------
+  fraud-service:
+    # LEARN: Built from our own Dockerfile (context = project root so the
+    # COPY src/ configs/ lines work). Compose builds it on `up --build`,
+    # making the whole stack self-contained — no external build step.
+    build:
+      context: .
+      dockerfile: docker/serving/Dockerfile
+    image: mlops-pipeline/fraud-service:0.1.0
+    container_name: mlops-fraud-service
+    restart: unless-stopped
+    networks:
+      - mlops-net
+
+    depends_on:
+      mlflow:
+        condition: service_healthy
+        # LEARN: The service imports its model from MLflow at startup, so it
+        # must wait until MLflow is actually serving (not just started).
+
+    ports:
+      - "3000:3000"  # REST API + Swagger UI — humans and other systems call this
+
+    environment:
+      BENTOML_DO_NOT_TRACK: "True"
+      # LEARN: In-network MLflow address (service-name DNS), NOT localhost —
+      # the import script reads this to fetch the @staging model.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      # LEARN: Decision threshold injected at deploy time. Move it along the
+      # precision/recall curve via .env + `docker compose up -d`, no rebuild.
+      FRAUD_DECISION_THRESHOLD: ${FRAUD_DECISION_THRESHOLD:-0.5}
+
+    healthcheck:
+      # LEARN: BentoML exposes /readyz (ready to serve). Python one-liner
+      # because the slim Bento image has no curl.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3000/readyz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 # -----------------------------------------------------------------------------
 # Networks
 # -----------------------------------------------------------------------------

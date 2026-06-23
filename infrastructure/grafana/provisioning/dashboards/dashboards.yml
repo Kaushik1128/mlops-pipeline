@@ -1,0 +1,13 @@
+# Tells Grafana to load dashboard JSON files from a directory on startup.
+apiVersion: 1
+
+providers:
+  - name: "mlops-dashboards"
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      # Matches the mount in docker-compose (grafana/dashboards -> here).
+      path: /var/lib/grafana/dashboards

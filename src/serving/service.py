@@ -39,6 +39,22 @@ THRESHOLD_ENV_VAR = "FRAUD_DECISION_THRESHOLD"
 V_COLUMNS = [f"V{i}" for i in range(1, 29)]
 MODEL_COLUMNS = V_COLUMNS + ["log_amount"]
 
+# LEARN: Custom Prometheus metrics, on top of BentoML's built-in request/latency
+# metrics. These capture the BUSINESS signal BentoML can't know: how many
+# predictions come back fraud vs legit, and the shape of the score distribution.
+# Created via bentoml.metrics so they register with BentoML's multiprocess
+# Prometheus registry and appear on the same /metrics endpoint.
+fraud_predictions_total = bentoml.metrics.Counter(
+    name="fraud_predictions_total",
+    documentation="Total predictions, labelled by outcome (fraud / legit).",
+    labelnames=["result"],
+)
+fraud_probability = bentoml.metrics.Histogram(
+    name="fraud_probability",
+    documentation="Distribution of predicted fraud probabilities.",
+    buckets=(0.0, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0),
+)
+
 
 class Transaction(BaseModel):
     """One credit-card transaction to score.
@@ -111,8 +127,16 @@ class FraudClassifier:
         row = pd.DataFrame([[data[c] for c in MODEL_COLUMNS]], columns=MODEL_COLUMNS)
 
         proba = float(self.model.predict_proba(row)[:, 1][0])
+        is_fraud = bool(proba >= self.threshold)
+
+        # LEARN: Record the business metrics. The counter (split by outcome)
+        # lets Grafana chart the live fraud RATE; the histogram lets us see the
+        # score distribution drift over time. These are cheap in-memory ops.
+        fraud_predictions_total.labels(result="fraud" if is_fraud else "legit").inc()
+        fraud_probability.observe(proba)
+
         return Prediction(
             fraud_probability=round(proba, 6),
-            is_fraud=bool(proba >= self.threshold),
+            is_fraud=is_fraud,
             threshold=self.threshold,
         )

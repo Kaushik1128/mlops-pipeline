@@ -49,9 +49,14 @@ evidently==0.7.21
 
 # --- Model serving ---
 bentoml==1.3.22
-# Serving framework — wraps the trained model in a high-performance REST API
-# with typed request validation, and can build a deployable container image.
-# We import the @staging model from the MLflow registry into BentoML's store.
+# Serving framework — wraps the trained model in a high-performance REST API.
+# NOTE: bentoml + prefect can't fully coexist in ONE env — bentoml needs
+# `python-multipart` (imports multipart.multipart) while prefect's litestar
+# needs the standalone `multipart` package; they collide on the import name.
+# That's WHY serving runs in its own container (docker/serving/requirements.txt,
+# prefect-free). On the host (which has prefect for the flow), `import bentoml`
+# may fail — run serving via Docker, not on the host. This is the dep-isolation
+# argument for containerizing the serving layer.
 
 setuptools<81
 # BentoML's MLflow integration still imports pkg_resources, which setuptools

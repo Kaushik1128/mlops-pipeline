@@ -4,7 +4,7 @@
 > model registry, drift detection, and auto-retraining. Built end-to-end as a
 > portfolio project on a fully local, free, Docker-based stack.
 
-**Status: Phase 6 of 8 complete** — training, registry, serving, drift detection, auto-retraining.
+**Status: Phase 7 of 8 complete** — full lifecycle + live observability dashboards.
 A full write-up with architecture diagram and demo recording lands in Phase 8.
 
 ---
@@ -30,7 +30,9 @@ A full write-up with architecture diagram and demo recording lands in Phase 8.
 - [x] **Phase 6 — Orchestration + auto-retraining.** A Prefect flow closes the
   loop: drift check → retrain → evaluate vs incumbent → promote only if better
   (governance gate) → refresh serving. Runs on a cron schedule.
-- [ ] **Phase 7 — Observability** (Prometheus + Grafana)
+- [x] **Phase 7 — Observability.** The fraud API is instrumented (BentoML
+  built-in metrics + custom fraud-rate counter); Prometheus scrapes it and
+  Grafana shows live request rate, latency percentiles, and fraud share.
 - [ ] **Phase 8 — Docs, architecture diagram, demo**
 
 ---
@@ -101,9 +103,11 @@ Service UIs (after `docker compose up -d`):
 | Service | URL |
 |---|---|
 | **Fraud API + Swagger docs** | **http://localhost:3000** |
+| **Grafana dashboards** | **http://localhost:3001** |
 | MLflow (experiments + registry) | http://localhost:5000 |
 | MinIO console (object storage) | http://localhost:9001 |
 | Prefect (orchestration) | http://localhost:4200 |
+| Prometheus (metrics) | http://localhost:9090 |
 
 ---
 

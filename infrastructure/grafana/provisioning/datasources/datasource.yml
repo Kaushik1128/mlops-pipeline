@@ -1,0 +1,10 @@
+# Provisions the Prometheus datasource on Grafana startup (no manual setup).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus           # stable uid so dashboards can reference it
+    access: proxy             # Grafana server queries Prometheus, not the browser
+    url: http://prometheus:9090   # service-name DNS on mlops-net
+    isDefault: true

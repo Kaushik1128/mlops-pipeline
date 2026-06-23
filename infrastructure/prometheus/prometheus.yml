@@ -1,0 +1,23 @@
+# =============================================================================
+# Prometheus scrape configuration.
+# Prometheus PULLS metrics from each target's /metrics endpoint on an interval
+# and stores them as time series. Targets are reached by service-name DNS on
+# the mlops-net Docker network.
+# =============================================================================
+global:
+  scrape_interval: 5s       # how often to pull metrics (fast for a live demo)
+  evaluation_interval: 5s
+
+scrape_configs:
+  # The fraud-serving API — BentoML's built-in metrics + our custom ones.
+  - job_name: "fraud-service"
+    metrics_path: /metrics
+    static_configs:
+      # LEARN: `fraud-service` is the compose service name; Docker DNS resolves
+      # it on mlops-net. Port 3000 is the container port (not the host mapping).
+      - targets: ["fraud-service:3000"]
+
+  # Prometheus scraping itself — handy for confirming it's alive.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

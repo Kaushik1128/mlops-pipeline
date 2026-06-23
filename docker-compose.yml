@@ -380,6 +380,51 @@ services:
       retries: 5
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Prometheus — scrapes /metrics from services and stores them as time series
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: mlops-prometheus
+    restart: unless-stopped
+    networks:
+      - mlops-net
+    ports:
+      - "9090:9090"  # Prometheus UI + query interface
+    volumes:
+      # LEARN: Mount our scrape config read-only. :ro means the container can't
+      # modify it — config is owned by the repo, not the container.
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus  # time-series DB persists across restarts
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboards querying Prometheus
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: mlops-grafana
+    restart: unless-stopped
+    networks:
+      - mlops-net
+    ports:
+      - "3001:3000"  # LEARN: host 3001 (3000 is taken by fraud-service)
+    environment:
+      # Anonymous admin access for a local demo — no login wall.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      # LEARN: Provision the datasource + dashboards AS CODE (mounted on boot),
+      # so the dashboard exists on first `up` — no manual clicking to recreate.
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 # -----------------------------------------------------------------------------
 # Networks
 # -----------------------------------------------------------------------------
@@ -411,6 +456,13 @@ volumes:
   prefect_data:
     # Prefect server's SQLite DB (Phase 6 will use this for flow run history).
     # We declare it now so Phase 6 doesn't require Compose-file surgery.
+
+  prometheus_data:
+    # Prometheus time-series database — keeps metric history across restarts.
+
+  grafana_data:
+    # Grafana's own DB (dashboards created in-UI, prefs). Provisioned dashboards
+    # come from mounted files, but in-UI changes persist here.
 
 # NOTE: Deliberately NO `mlflow_data` volume. MLflow itself is stateless in
 # this design — its metadata lives in `postgres_data`, its artifacts live in

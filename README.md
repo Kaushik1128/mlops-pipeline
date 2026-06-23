@@ -1,127 +1,206 @@
 # MLOps Pipeline — Credit Card Fraud Detection
 
-> Production-grade MLOps pipeline with experiment tracking, data versioning,
-> model registry, drift detection, and auto-retraining. Built end-to-end as a
-> portfolio project on a fully local, free, Docker-based stack.
+> A production-shaped MLOps system that trains a fraud model, serves it as a
+> REST API, watches it for data drift, and **automatically retrains and
+> redeploys itself** when the world changes — all observable on live
+> dashboards. Built end-to-end on a free, local, Docker-based stack.
 
-**Status: Phase 7 of 8 complete** — full lifecycle + live observability dashboards.
-A full write-up with architecture diagram and demo recording lands in Phase 8.
-
----
-
-## Build progress
-
-- [x] **Phase 1 — Infrastructure.** Docker Compose stack: MinIO (S3-compatible
-  object storage), PostgreSQL, MLflow tracking server, Prefect. Custom bridge
-  network, named volumes, healthchecks, init-container bucket provisioning.
-- [x] **Phase 2 — Data pipeline.** Dataset download (OpenML), EDA, stratified
-  preprocessing, and full data versioning with DVC pushing to MinIO.
-  Reproducibility verified (wipe local → `dvc pull` → identical hashes).
-- [x] **Phase 3 — Model training.** Config-driven training, MLflow experiment
-  tracking, reusable evaluation (PR-AUC / F1 / confusion matrix), and model
-  registry with alias-based promotion.
-- [x] **Phase 4 — Model serving.** Containerized BentoML REST API that imports
-  the `@staging` model from MLflow at startup. Pydantic-validated `/predict`
-  endpoint, auto-generated Swagger docs, and a deploy-time decision threshold.
-- [x] **Phase 5 — Drift detection.** Evidently AI compares a current batch
-  against the training reference (per-feature Wasserstein distance). Emits an
-  HTML report and a machine-readable drift signal — the trigger for retraining.
-  Drift is importance-weighted so it fires on features the model relies on.
-- [x] **Phase 6 — Orchestration + auto-retraining.** A Prefect flow closes the
-  loop: drift check → retrain → evaluate vs incumbent → promote only if better
-  (governance gate) → refresh serving. Runs on a cron schedule.
-- [x] **Phase 7 — Observability.** The fraud API is instrumented (BentoML
-  built-in metrics + custom fraud-rate counter); Prometheus scrapes it and
-  Grafana shows live request rate, latency percentiles, and fraud share.
-- [ ] **Phase 8 — Docs, architecture diagram, demo**
+The interesting part of machine learning in production isn't training a model —
+it's everything *around* it. Models decay silently: a fraud detector trained on
+yesterday's patterns quietly goes wrong as fraudsters adapt, while still
+returning confident predictions. This project is the system that **detects that
+decay and heals itself**.
 
 ---
 
-## Current results
+## Architecture
 
-Two models compared on a held-out test set (0.17% fraud — extreme class
-imbalance, so **PR-AUC** is the headline metric, not accuracy or ROC-AUC):
+```mermaid
+flowchart LR
+    DS["Fraud dataset<br/>(OpenML)"] --> PP["Preprocess<br/>+ DVC / MinIO"]
+    PP --> TR["Train<br/>LogReg · RF · XGBoost"]
+    TR --> ML["MLflow<br/>registry @staging"]
+    ML --> API["BentoML API<br/>/predict"]
+    API --> PROM["Prometheus"] --> GRAF["Grafana<br/>dashboards"]
+
+    LIVE["Live traffic"] --> API
+    LIVE --> DRIFT["Evidently<br/>drift check"]
+    DRIFT -->|"drift in important features"| FLOW["Prefect flow<br/>auto-retrain"]
+    FLOW -->|"promote only if better"| ML
+    FLOW -->|"refresh"| API
+
+    classDef loop fill:#fde7e9,stroke:#d13438,color:#000;
+    class DRIFT,FLOW loop;
+```
+
+**The self-healing loop (red):** live traffic is checked for drift; if features
+the model *relies on* have drifted, a Prefect flow retrains, evaluates the
+candidate against the incumbent, promotes it **only if it's better**, and
+refreshes the serving API — with no human in the loop.
+
+---
+
+## Why this project
+
+A model in a notebook is worth nothing to a business — fraud happens 24/7 in
+milliseconds. And a deployed model isn't "done": it **decays**. During early
+COVID, spending patterns shifted overnight and fraud models trained on
+pre-pandemic data started blocking normal purchases and missing new fraud. The
+teams that survived had **drift monitoring and automated retraining** — exactly
+what this project implements.
+
+So this repo is deliberately about the hard 90% of real ML work: reproducible
+data and experiments, a governed model registry, a validated serving API, drift
+detection, automated retraining with a promotion gate, and live observability.
+
+---
+
+## Results
+
+Three models compared on a held-out test set. The dataset is **extremely
+imbalanced** (0.17% fraud), so the headline metric is **PR-AUC**, not accuracy
+or ROC-AUC (which look great but are misleading under imbalance).
 
 | Model | PR-AUC | ROC-AUC | Precision | Recall |
 |---|---|---|---|---|
 | Logistic Regression (baseline) | 0.708 | 0.971 | 0.058 | 0.918 |
-| **XGBoost** (`@staging`) | **0.875** | 0.976 | 0.837 | 0.837 |
+| Random Forest | 0.811 | **0.982** | 0.808 | 0.816 |
+| **XGBoost** (promoted to `@staging`) | **0.875** | 0.976 | 0.837 | 0.837 |
 
-XGBoost lifts PR-AUC by +0.167 and precision from 6% → 84%, while ROC-AUC
-barely moves — a concrete demonstration of why ROC-AUC is misleading under
-heavy imbalance. The winner is registered to MLflow as `fraud-classifier`
-and promoted via the `@staging` alias.
+XGBoost lifts PR-AUC by +0.17 over the baseline and precision from 6% → 84%,
+while ROC-AUC barely moves — a concrete demonstration of why ROC-AUC misleads
+under heavy class imbalance. (Note Random Forest has the *highest* ROC-AUC yet
+ranks 2nd on PR-AUC — the trap, illustrated.)
+
+---
+
+## How it works (the MLOps lifecycle)
+
+1. **Data** — the fraud dataset is downloaded, explored (EDA), preprocessed
+   with a stratified split, and **versioned with DVC** (pointers in Git, bytes
+   in MinIO). Reproducibility is verified: wipe local data, `dvc pull`, hashes
+   match.
+2. **Train & track** — a config-driven trainer fits multiple models, logging
+   every run to **MLflow** (params, metrics, the git SHA + data hash for full
+   lineage, the model artifact, and a confusion-matrix plot).
+3. **Register & promote** — the best model by PR-AUC is registered in the
+   **MLflow Model Registry** and aliased `@staging`. Serving loads the alias, so
+   promoting a new model needs no serving-code change.
+4. **Serve** — a containerized **BentoML** service imports `@staging` at startup
+   and exposes a Pydantic-validated `/predict` endpoint with auto-generated
+   Swagger docs. The decision threshold is a deploy-time env var.
+5. **Detect drift** — **Evidently** compares a current batch against the
+   training reference per-feature (Wasserstein distance). Drift is
+   **importance-weighted** — it fires on features the model relies on, not on
+   noise in features it ignores (an analogue of `scale_pos_weight`).
+6. **Auto-retrain** — a **Prefect** flow ties it together: drift check → retrain
+   → evaluate vs incumbent → **promote only on a real improvement** → refresh
+   serving. Runs on a cron schedule.
+7. **Observe** — the API is instrumented with **Prometheus** metrics (request
+   rate, latency percentiles, and a custom fraud-rate counter), visualized on a
+   provisioned **Grafana** dashboard.
 
 ---
 
 ## Tech stack
 
-| Layer | Tool |
-|---|---|
-| Model training | Scikit-learn, XGBoost |
-| Experiment tracking + registry | MLflow |
-| Data versioning | DVC |
-| Drift detection | Evidently AI *(Phase 5)* |
-| Orchestration | Prefect *(Phase 6)* |
-| Model serving | BentoML *(Phase 4)* |
-| Observability | Prometheus + Grafana *(Phase 7)* |
-| Infrastructure | Docker Compose + MinIO (S3-compatible) |
-| Dataset | Credit Card Fraud Detection (Worldline/ULB, via OpenML id=1597) |
+| Layer | Tool | Why |
+|---|---|---|
+| Infrastructure | Docker Compose | One command brings up the whole 7-service stack |
+| Object storage | MinIO (S3-compatible) | Real S3 API locally; same code works on AWS |
+| Data versioning | DVC | Git-for-data — version datasets without bloating Git |
+| Experiment tracking + registry | MLflow | Compare runs, govern model promotion with lineage |
+| Modeling | Scikit-learn, XGBoost | Strong tabular baselines; XGBoost handles imbalance |
+| Model serving | BentoML | Model → validated REST API + container, minimal boilerplate |
+| Drift detection | Evidently AI | Statistical per-feature drift, reports + signal |
+| Orchestration | Prefect | Scheduled, retried, observable flows (not brittle cron) |
+| Metrics DB | Prometheus | Pull-based time-series, the de-facto standard |
+| Dashboards | Grafana | Live visualization of system + business metrics |
+| Metadata DB | PostgreSQL | MLflow's backing store |
 
 ---
 
 ## Quickstart
 
 ```bash
-# 1. Bring up the local stack (MinIO, Postgres, MLflow, Prefect)
-cp .env.example .env          # then fill in passwords
+# 1. Configure secrets
+cp .env.example .env            # then edit the passwords
+
+# 2. Bring up the full stack (7 services)
 docker compose up -d
 
-# 2. Create a Python env and install deps
+# 3. Create a Python env for the pipeline code
 python -m venv .venv
-.venv\Scripts\Activate.ps1     # Windows PowerShell
+.venv\Scripts\Activate.ps1       # Windows PowerShell
 pip install -r requirements.txt
 
-# 3. Get and version the data
+# 4. Data: download, preprocess, version
 python -m src.data.download
 python -m src.data.preprocess
 dvc push
 
-# 4. Train, evaluate, and register a model
+# 5. Train, evaluate, register the best model
 python -m src.models.train --model xgboost
 python -m src.models.register
 
-# 5. Serve it — the fraud-service container imports @staging and serves it
-docker compose up -d --build fraud-service
-curl -X POST http://localhost:3000/predict \
-  -H "Content-Type: application/json" \
-  -d '{"transaction": {"V1": -1.36, ..., "V28": -0.02, "amount": 149.62}}'
+# 6. Drift check + auto-retraining flow
+python -m src.monitoring.check_drift --current data/processed/test_drifted.parquet
+python -m src.flows.retraining_flow --current data/processed/test_drifted.parquet
+
+# 7. Drive traffic and watch the Grafana dashboard
+python -m src.serving.generate_traffic
 ```
 
-Service UIs (after `docker compose up -d`):
+### Service UIs
 
 | Service | URL |
 |---|---|
-| **Fraud API + Swagger docs** | **http://localhost:3000** |
-| **Grafana dashboards** | **http://localhost:3001** |
+| **Fraud API + Swagger docs** | http://localhost:3000 |
+| **Grafana dashboards** | http://localhost:3001 |
 | MLflow (experiments + registry) | http://localhost:5000 |
-| MinIO console (object storage) | http://localhost:9001 |
 | Prefect (orchestration) | http://localhost:4200 |
+| MinIO console (object storage) | http://localhost:9001 |
 | Prometheus (metrics) | http://localhost:9090 |
 
 ---
 
-## Repository layout
+## Repository structure
 
 ```
-configs/            Training config (hyperparameters, paths)
-data/               DVC-tracked datasets (raw + processed)
-docker/             Custom Dockerfiles (MLflow image)
-notebooks/          Exploratory data analysis
-src/data/           Download + preprocessing
-src/models/         Training, evaluation, registry
-docker-compose.yml  The full local stack
+configs/             Training config (hyperparameters, paths)
+data/                DVC-tracked datasets (raw + processed)
+docker/              Custom Dockerfiles (MLflow image, serving image)
+infrastructure/      Prometheus scrape config + Grafana dashboards (as code)
+notebooks/           Exploratory data analysis
+src/data/            Download + preprocessing
+src/models/          Training, evaluation, registry
+src/serving/         BentoML service, model import, traffic generator
+src/monitoring/      Drift simulation + detection (Evidently)
+src/flows/           Prefect auto-retraining flow
+docker-compose.yml   The full 7-service stack
+docs/DEMO.md         Click-by-click demo walkthrough
 ```
+
+---
+
+## Engineering highlights
+
+- **Reproducibility everywhere** — every MLflow run is tagged with its git SHA
+  and DVC data hash, so any result is traceable to exact code + exact data.
+- **Right metric for the problem** — PR-AUC over ROC-AUC under 0.17% imbalance,
+  demonstrated three times across the model comparison.
+- **Governance gate** — auto-retraining promotes a new model *only* if it beats
+  the incumbent by a margin; it can never displace a known-good model on noise.
+- **Importance-weighted drift** — drift is weighted by model feature importance,
+  so retraining triggers on dangerous drift and ignores harmless noise.
+- **Dependency isolation** — the serving layer is containerized partly because
+  BentoML and Prefect have conflicting dependencies; isolating it is the fix.
+- **Train/serve skew avoided** — preprocessing (scaling in-pipeline, log1p at
+  serve time) is replicated exactly so the model never sees inputs it didn't
+  train on.
+
+---
 
 > Built as a learning-focused portfolio project. Code favours clarity and
-> documented decisions over cleverness.
+> documented decisions over cleverness. See `docs/DEMO.md` for a guided
+> walkthrough.

@@ -4,7 +4,7 @@
 > model registry, drift detection, and auto-retraining. Built end-to-end as a
 > portfolio project on a fully local, free, Docker-based stack.
 
-**Status: Phase 4 of 8 complete** — model training, MLflow registry, live serving API.
+**Status: Phase 5 of 8 complete** — training, registry, serving API, drift detection.
 A full write-up with architecture diagram and demo recording lands in Phase 8.
 
 ---
@@ -23,7 +23,9 @@ A full write-up with architecture diagram and demo recording lands in Phase 8.
 - [x] **Phase 4 — Model serving.** Containerized BentoML REST API that imports
   the `@staging` model from MLflow at startup. Pydantic-validated `/predict`
   endpoint, auto-generated Swagger docs, and a deploy-time decision threshold.
-- [ ] **Phase 5 — Drift detection** (Evidently AI)
+- [x] **Phase 5 — Drift detection.** Evidently AI compares a current batch
+  against the training reference (per-feature Wasserstein distance). Emits an
+  HTML report and a machine-readable drift signal — the trigger for retraining.
 - [ ] **Phase 6 — Orchestration + auto-retraining** (Prefect)
 - [ ] **Phase 7 — Observability** (Prometheus + Grafana)
 - [ ] **Phase 8 — Docs, architecture diagram, demo**

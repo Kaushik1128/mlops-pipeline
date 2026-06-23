@@ -1,5 +1,7 @@
 # MLOps Pipeline — Credit Card Fraud Detection
 
+[![CI](https://github.com/Kaushik1128/mlops-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaushik1128/mlops-pipeline/actions/workflows/ci.yml)
+
 > A production-shaped MLOps system that trains a fraud model, serves it as a
 > REST API, watches it for data drift, and **automatically retrains and
 > redeploys itself** when the world changes — all observable on live
@@ -198,6 +200,9 @@ docs/DEMO.md         Click-by-click demo walkthrough
 - **Train/serve skew avoided** — preprocessing (scaling in-pipeline, log1p at
   serve time) is replicated exactly so the model never sees inputs it didn't
   train on.
+- **Tested + CI** — pure-function modules (metrics, pipeline construction, drift
+  parsing, sampling) have a pytest suite run on every push via GitHub Actions
+  (`pip install -r requirements-test.txt && pytest`).
 
 ---
 

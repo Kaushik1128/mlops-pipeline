@@ -1,0 +1,15 @@
+# Minimal dependencies for running the unit tests (used by CI).
+#
+# Deliberately NOT the full requirements.txt: the tests target pure-function
+# modules with synthetic inputs, so they don't need mlflow, bentoml, prefect,
+# evidently, or dvc — which are heavy and (bentoml vs prefect) mutually
+# conflicting. Keeping CI deps minimal makes it fast and conflict-free.
+
+pytest==8.3.4
+numpy==2.1.3
+pandas==2.2.3
+pyarrow==18.1.0
+scikit-learn==1.6.0
+xgboost==3.3.0
+matplotlib==3.10.0
+PyYAML==6.0.3

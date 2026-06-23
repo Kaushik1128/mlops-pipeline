@@ -89,7 +89,11 @@ def check_drift(
     ref_ds = Dataset.from_pandas(ref, data_definition=data_def)
     cur_ds = Dataset.from_pandas(cur, data_definition=data_def)
 
-    report = Report([DataDriftPreset()])
+    # LEARN: Pass our project threshold INTO the preset so Evidently's own
+    # dataset-drift verdict (shown in the HTML report header) matches the
+    # signal we emit — otherwise the report uses Evidently's blunt 0.5 default
+    # and confusingly says "NOT detected" while our pipeline says "detected".
+    report = Report([DataDriftPreset(drift_share=drift_share_threshold)])
     run = report.run(cur_ds, ref_ds)  # (current, reference)
 
     # --- Save the human-readable HTML report ---

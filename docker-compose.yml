@@ -275,7 +275,7 @@ services:
   # Phase 6 will register the retraining and drift-check flows here.
   # ---------------------------------------------------------------------------
   prefect:
-    image: prefecthq/prefect:3.1.5-python3.11
+    image: prefecthq/prefect:3.7.5-python3.11
     container_name: mlops-prefect
     restart: unless-stopped
     networks:

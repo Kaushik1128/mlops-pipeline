@@ -34,6 +34,13 @@ mlflow==2.18.0
 # Same version as the server in docker/mlflow/. The client just makes HTTP
 # calls to http://localhost:5000 — Python version on each side is independent.
 
+# --- Orchestration ---
+prefect==3.7.5
+# Client must match the server image (prefecthq/prefect:3.7.5) to avoid
+# client/server API skew. We use 3.7 (not 3.1) because Prefect 3.1.x crashes
+# under pydantic 2.13 (which evidently 0.7.21 requires) — a hard conflict that
+# the newer Prefect resolves.
+
 # --- Drift detection / monitoring ---
 evidently==0.7.21
 # Compares a reference vs current dataset with per-feature statistical tests

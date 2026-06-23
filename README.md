@@ -4,7 +4,7 @@
 > model registry, drift detection, and auto-retraining. Built end-to-end as a
 > portfolio project on a fully local, free, Docker-based stack.
 
-**Status: Phase 5 of 8 complete** — training, registry, serving API, drift detection.
+**Status: Phase 6 of 8 complete** — training, registry, serving, drift detection, auto-retraining.
 A full write-up with architecture diagram and demo recording lands in Phase 8.
 
 ---
@@ -26,7 +26,10 @@ A full write-up with architecture diagram and demo recording lands in Phase 8.
 - [x] **Phase 5 — Drift detection.** Evidently AI compares a current batch
   against the training reference (per-feature Wasserstein distance). Emits an
   HTML report and a machine-readable drift signal — the trigger for retraining.
-- [ ] **Phase 6 — Orchestration + auto-retraining** (Prefect)
+  Drift is importance-weighted so it fires on features the model relies on.
+- [x] **Phase 6 — Orchestration + auto-retraining.** A Prefect flow closes the
+  loop: drift check → retrain → evaluate vs incumbent → promote only if better
+  (governance gate) → refresh serving. Runs on a cron schedule.
 - [ ] **Phase 7 — Observability** (Prometheus + Grafana)
 - [ ] **Phase 8 — Docs, architecture diagram, demo**
 

@@ -1,6 +1,16 @@
 # MLOps Pipeline — Credit Card Fraud Detection
 
 [![CI](https://github.com/Kaushik1128/mlops-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaushik1128/mlops-pipeline/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+![Docker](https://img.shields.io/badge/Docker_Compose-2496ED?logo=docker&logoColor=white)
+![MLflow](https://img.shields.io/badge/MLflow-0194E2?logo=mlflow&logoColor=white)
+![Prefect](https://img.shields.io/badge/Prefect-026AA7?logo=prefect&logoColor=white)
+![BentoML](https://img.shields.io/badge/BentoML-FF6E42)
+![Evidently](https://img.shields.io/badge/Evidently-ED0400)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white)
 
 > A production-shaped MLOps system that trains a fraud model, serves it as a
 > REST API, watches it for data drift, and **automatically retrains and
@@ -73,6 +83,34 @@ XGBoost lifts PR-AUC by +0.17 over the baseline and precision from 6% → 84%,
 while ROC-AUC barely moves — a concrete demonstration of why ROC-AUC misleads
 under heavy class imbalance. (Note Random Forest has the *highest* ROC-AUC yet
 ranks 2nd on PR-AUC — the trap, illustrated.)
+
+| Precision-Recall curves | XGBoost confusion matrix |
+|---|---|
+| ![PR curves](assets/pr_curves.png) | ![Confusion matrix](assets/confusion_matrix.png) |
+
+*(Regenerate with `python -m src.models.plot_results`.)*
+
+---
+
+## Screenshots
+
+> Capture each from the running stack, save into `assets/screenshots/` with the
+> filename below, then uncomment the embed block under the table.
+
+| # | Capture | Save as | From |
+|---|---|---|---|
+| 1 | MLflow — the 3-run model comparison (sort by `pr_auc`) | `mlflow.png` | http://localhost:5000 |
+| 2 | Grafana — the fraud dashboard with live traffic flowing | `grafana.png` | http://localhost:3001 |
+| 3 | Prefect — an auto-retraining flow run + its task graph | `prefect.png` | http://localhost:4200 |
+| 4 | Swagger — `POST /predict` "Try it out" returning a fraud result | `swagger.png` | http://localhost:3000 |
+
+<!-- Uncomment once the four files are in assets/screenshots/
+| MLflow — experiments & registry | Grafana — live dashboard |
+|---|---|
+| ![MLflow](assets/screenshots/mlflow.png) | ![Grafana](assets/screenshots/grafana.png) |
+| Prefect — auto-retraining flow | BentoML — Swagger API |
+| ![Prefect](assets/screenshots/prefect.png) | ![Swagger](assets/screenshots/swagger.png) |
+-->
 
 ---
 

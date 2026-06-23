@@ -94,14 +94,10 @@ ranks 2nd on PR-AUC — the trap, illustrated.)
 
 ## Screenshots
 
-> Capture each from the running stack, save into `assets/screenshots/` with the
-> filename below, then uncomment the embed block under the table.
-
-
 | MLflow — experiments & registry | Grafana — live dashboard |
 |---|---|
 | ![MLflow](assets/screenshots/mlflow.png) | ![Grafana](assets/screenshots/grafana.png) |
-| Prefect — auto-retraining flow | BentoML — Swagger API |
+| **Prefect — auto-retraining flow** | **BentoML — Swagger API** |
 | ![Prefect](assets/screenshots/prefect.png) | ![Swagger](assets/screenshots/swagger.png) |
 
 ---

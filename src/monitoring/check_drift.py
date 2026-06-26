@@ -7,7 +7,7 @@ trained on) against a current batch. Produces:
   - a clear stdout summary + return dict
 
 The JSON signal (drift_detected, share of drifted columns, which columns) is
-what Phase 6's auto-retraining flow will consume to decide whether to retrain.
+what the auto-retraining flow consumes to decide whether to retrain.
 
 Usage:
     # Drifted batch (should detect drift):
@@ -33,11 +33,9 @@ REFERENCE_FILE = PROJECT_ROOT / "data" / "processed" / "train.parquet"
 REPORTS_DIR = PROJECT_ROOT / "reports" / "drift"
 TARGET_COLUMN = "Class"
 
-# LEARN: Dataset-level drift fires when the SHARE of drifted columns crosses
-# this. Evidently's default is 0.5 ("more than half the features"), but that's
-# too blunt for fraud: drifting even a few of the model's MOST IMPORTANT
-# features is dangerous. We use 0.1 — react when ~10%+ of features shift. This
-# cleanly separates our control (0% drift) from the drifted batch (17%).
+# Dataset-level drift fires when the share of drifted columns crosses this.
+# Evidently defaults to 0.5; we use 0.1, since drifting even a few of the
+# model's important features is significant for fraud.
 DRIFT_SHARE_THRESHOLD = 0.1
 # Importance-weighted share that triggers drift. Because important-feature
 # drift concentrates the weighted score, this sits higher than the plain
@@ -65,14 +63,9 @@ def load_staging_importances(
 ) -> dict[str, float]:
     """Load the @staging model's feature importances, normalized to sum to 1.
 
-    LEARN: This is the drift analogue of scale_pos_weight. Instead of treating
-    all 29 features equally, we weight each feature's drift contribution by how
-    much the model actually relies on it — so drift in V14 (≈37% of the model)
-    counts far more than drift in a feature the model barely uses.
-
-    Production note: you'd snapshot these importances WITH the model version so
-    the weights can't silently fall out of sync with the served model. Here we
-    read them live from @staging for simplicity.
+    Used to weight each feature's drift contribution by how much the model
+    relies on it. (In production these would be snapshotted with the model
+    version; here they're read live from @staging.)
     """
     import mlflow
     import numpy as np
@@ -120,8 +113,7 @@ def check_drift(
     if not reference_file.exists():
         raise FileNotFoundError(f"Reference dataset not found: {reference_file}")
 
-    # LEARN: Drop the target — DATA drift compares INPUT feature distributions,
-    # not the label. Both datasets must share the same feature columns.
+    # Drop the target — data drift compares input feature distributions, not the label.
     ref = pd.read_parquet(reference_file).drop(columns=[TARGET_COLUMN], errors="ignore")
     cur = pd.read_parquet(current_file).drop(columns=[TARGET_COLUMN], errors="ignore")
 
@@ -135,10 +127,8 @@ def check_drift(
     ref_ds = Dataset.from_pandas(ref, data_definition=data_def)
     cur_ds = Dataset.from_pandas(cur, data_definition=data_def)
 
-    # LEARN: Pass our project threshold INTO the preset so Evidently's own
-    # dataset-drift verdict (shown in the HTML report header) matches the
-    # signal we emit — otherwise the report uses Evidently's blunt 0.5 default
-    # and confusingly says "NOT detected" while our pipeline says "detected".
+    # Pass our threshold into the preset so the HTML report's verdict matches
+    # the signal we emit (otherwise it uses Evidently's 0.5 default).
     report = Report([DataDriftPreset(drift_share=drift_share_threshold)])
     run = report.run(cur_ds, ref_ds)  # (current, reference)
 
@@ -168,9 +158,8 @@ def check_drift(
 
     # --- Decide drift: importance-weighted if weights given, else plain share ---
     if weights:
-        # LEARN: weighted_share = (importance carried by drifted features) /
-        # (total importance). Drifting V14 alone (~37%) can exceed the threshold
-        # by itself; drifting many trivial features barely moves it.
+        # weighted_share = importance carried by drifted features / total
+        # importance, so drift in a high-importance feature dominates.
         total_w = sum(weights.values()) or 1.0
         weighted_share = sum(weights.get(c, 0.0) for c in drifted_columns) / total_w
         drift_detected = weighted_share >= weighted_threshold
@@ -195,7 +184,7 @@ def check_drift(
         "report_html": str(html_path),
     }
 
-    # --- Persist the JSON signal (Phase 6 will read this) ---
+    # Persist the JSON signal (consumed by the auto-retraining flow).
     json_path = REPORTS_DIR / f"{report_name}_signal.json"
     json_path.write_text(json.dumps(signal, indent=2))
     return signal

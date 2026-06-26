@@ -40,11 +40,8 @@ TRACKING_URI = _CFG["mlflow"]["tracking_uri"]
 EXPERIMENT = _CFG["mlflow"]["experiment_name"]
 REGISTERED_MODEL = _CFG["mlflow"]["registered_model_name"]
 
-# LEARN: Minimum PR-AUC gain required to promote. Two reasons:
-#   1. Avoids promoting on rounding/precision noise (a "0.874826 > 0.8748"
-#      phantom improvement when the incumbent tag was stored rounded).
-#   2. Governance: don't churn a known-good production model — with the risk
-#      and cost of a deployment — for a negligible gain. Require a real margin.
+# Minimum PR-AUC gain required to promote — avoids promoting on noise and
+# avoids churning a known-good production model for a negligible improvement.
 MIN_IMPROVEMENT = 0.001
 
 
@@ -75,9 +72,7 @@ def retrain_model(model_name: str) -> dict:
     """Retrain via the existing CLI, then return the new run's id + PR-AUC."""
     logger = get_run_logger()
     logger.info("Retraining %s ...", model_name)
-    # LEARN: We shell out to the proven training CLI (own process, clean exit
-    # code) rather than re-implement training in the flow. check=True turns a
-    # non-zero exit into an exception, which Prefect surfaces + retries.
+    # Shell out to the training CLI; check=True raises on failure so Prefect retries.
     subprocess.run(
         [sys.executable, "-m", "src.models.train", "--model", model_name],
         check=True, cwd=PROJECT_ROOT,
@@ -121,9 +116,7 @@ def evaluate_and_promote(candidate: dict, model_name: str) -> dict:
         logger.info("No current @staging model — first promotion.")
 
     cand_pr_auc = candidate["pr_auc"]
-    # LEARN: The governance gate. Promote only if the candidate beats the
-    # incumbent by at least MIN_IMPROVEMENT — never on noise, never to displace
-    # a known-good production model for a negligible gain.
+    # Governance gate: promote only on a real improvement over the incumbent.
     better = incumbent_pr_auc is None or cand_pr_auc > incumbent_pr_auc + MIN_IMPROVEMENT
     logger.info("Gate: candidate=%.4f vs incumbent=%s (margin=%.3f) -> %s",
                 cand_pr_auc, incumbent_pr_auc, MIN_IMPROVEMENT,
@@ -166,12 +159,7 @@ def auto_retraining_flow(
     model_name: str = "xgboost",
     weighted: bool = True,
 ) -> dict:
-    """Drift-triggered retraining loop. Returns a summary of what it did.
-
-    LEARN: A @flow is just Python — so the branching below (stop on no drift,
-    promote only if better, refresh only if promoted) is plain `if`/`return`.
-    Prefect records which path each run took, with per-task state in the UI.
-    """
+    """Drift-triggered retraining loop. Returns a summary of what it did."""
     logger = get_run_logger()
 
     # 1. Detect drift.
@@ -214,10 +202,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.serve:
-        # LEARN: .serve() registers a Prefect DEPLOYMENT (visible in the UI)
-        # bound to a cron schedule, then runs a long-lived process that triggers
-        # the flow automatically on schedule. This is what turns "a flow I run
-        # by hand" into "a model that maintains itself".
+        # Register a cron-scheduled deployment and run a process that triggers
+        # the flow automatically on schedule (blocks).
         auto_retraining_flow.serve(
             name="auto-retraining-scheduled",
             cron=args.cron,

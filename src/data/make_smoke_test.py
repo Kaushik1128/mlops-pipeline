@@ -1,9 +1,7 @@
-"""Produce a 1000-row stratified smoke-test subset of the test split.
+"""Produce a stratified smoke-test subset of the processed test split.
 
-Used during Phase 3 model development for fast iteration: training and
-scoring against 1000 rows takes seconds, vs minutes on the full 56,962-row
-test set. The smoke set exercises the same code paths but with negligible
-wall-clock cost.
+A small (default 1000-row) sample for fast iteration during model development:
+it exercises the same code paths as the full test set at negligible cost.
 
 Reads data/processed/test.parquet and writes data/processed/test_smoke.parquet.
 
@@ -59,38 +57,20 @@ def make_smoke_test(
     df = pd.read_parquet(in_file)
     logger.info("Source has %d rows, %d columns", len(df), df.shape[1])
 
-    # LEARN: Defensive checks — the target column is essential for stratify=,
-    # and we can't sample more rows than the source contains.
     if TARGET_COLUMN not in df.columns:
         raise ValueError(
             f"Source is missing the target column '{TARGET_COLUMN}'. "
             f"Got columns: {sorted(df.columns)}"
         )
     if n_rows > len(df):
-        raise ValueError(
-            f"n_rows ({n_rows}) cannot exceed source row count ({len(df)})."
-        )
+        raise ValueError(f"n_rows ({n_rows}) cannot exceed source row count ({len(df)}).")
 
-    # LEARN: train_test_split is the standard sklearn way to do stratified
-    # subset selection. We pass train_size as an INTEGER (not a fraction) so
-    # we get exactly n_rows in the first return value. The second return
-    # (the leftover) is discarded with the `_` convention.
-    #
-    # stratify=df[TARGET_COLUMN] preserves the ~0.17% fraud rate in the
-    # sample. Without stratification, with 0.17% positives, there's a real
-    # chance a random 1000-row sample contains ZERO fraud rows — which would
-    # defeat the smoke-test purpose (we'd never exercise positive-class code
-    # paths during dev iterations).
+    # train_test_split as a stratified sampler: an integer train_size gives
+    # exactly n_rows, and stratify preserves the ~0.17% fraud rate (a plain
+    # random sample of 1000 rows could contain zero fraud cases).
     sample_df, _ = train_test_split(
-        df,
-        train_size=n_rows,
-        stratify=df[TARGET_COLUMN],
-        random_state=seed,
+        df, train_size=n_rows, stratify=df[TARGET_COLUMN], random_state=seed,
     )
-
-    # LEARN: Reset the index so the saved Parquet doesn't carry the
-    # discontiguous shuffled indices from train_test_split. Same reason
-    # we pass index=False to to_parquet — keep the file clean.
     sample_df = sample_df.reset_index(drop=True)
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -105,25 +85,16 @@ def _log_sample_stats(df: pd.DataFrame) -> None:
     """Log row count and class distribution of the smoke sample."""
     n = len(df)
     n_fraud = int(df[TARGET_COLUMN].sum())
-    pct = 100.0 * n_fraud / n
-    logger.info("SMOKE: %d rows | fraud=%d (%.4f%%)", n, n_fraud, pct)
+    logger.info("SMOKE: %d rows | fraud=%d (%.4f%%)", n, n_fraud, 100.0 * n_fraud / n)
 
 
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument(
-        "--n-rows",
-        type=int,
-        default=DEFAULT_N_ROWS,
-        help=f"Number of rows in the smoke sample (default {DEFAULT_N_ROWS}).",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_SEED,
-        help=f"Random seed for the sample (default {DEFAULT_SEED}).",
-    )
+    parser.add_argument("--n-rows", type=int, default=DEFAULT_N_ROWS,
+                        help=f"Number of rows in the smoke sample (default {DEFAULT_N_ROWS}).")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED,
+                        help=f"Random seed for the sample (default {DEFAULT_SEED}).")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -137,7 +108,6 @@ def main() -> int:
     except Exception:
         logger.exception("Smoke-test generation failed.")
         return 1
-
     return 0
 
 

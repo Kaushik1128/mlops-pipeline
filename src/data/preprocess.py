@@ -5,10 +5,10 @@ split, applies log1p to the Amount column, and writes:
     data/processed/train.parquet
     data/processed/test.parquet
 
-Scaling (StandardScaler) is INTENTIONALLY NOT done here — it belongs inside
-the model training pipeline (Phase 3) so that the fitted scaler ships
-together with the model as a single sklearn Pipeline artifact. This avoids
-having to version and load a separate scaler at inference time.
+Scaling (StandardScaler) is intentionally NOT done here — it lives inside the
+model training pipeline so the fitted scaler ships with the model as a single
+sklearn Pipeline artifact, avoiding a separate scaler to version and load at
+inference time.
 
 Usage:
     python -m src.data.preprocess
@@ -64,9 +64,7 @@ def preprocess(
     df = pd.read_parquet(raw_file)
     logger.info("Loaded %d rows, %d columns", len(df), df.shape[1])
 
-    # LEARN: Defensive validation. If the schema ever changes (e.g. an OpenML
-    # mirror swap drops a column — as we already discovered with `Time`),
-    # we want to fail loudly here rather than silently train on garbage.
+    # Fail loudly if the expected schema is missing rather than training on bad data.
     expected_columns = {f"V{i}" for i in range(1, 29)} | {"Amount", TARGET_COLUMN}
     missing = expected_columns - set(df.columns)
     if missing:
@@ -75,27 +73,16 @@ def preprocess(
             f"Got columns: {sorted(df.columns)}"
         )
 
-    # LEARN: log1p(x) = log(1 + x). The +1 inside the log handles
-    # Amount == 0 (which exists in this data — refund/test transactions).
-    # Plain log(0) is undefined and would produce -inf. log1p is the
-    # numerically stable, NaN-safe choice for non-negative values.
+    # log1p handles Amount == 0 safely (plain log(0) is undefined) and tames the
+    # heavy right skew of transaction amounts.
     df["Amount"] = np.log1p(df["Amount"])
     df = df.rename(columns={"Amount": "log_amount"})
-    logger.info("Applied log1p to Amount → renamed to log_amount")
 
-    # LEARN: stratify=y ensures the positive class ratio is preserved in
-    # both train and test. Without it, with 492 positives out of 284,807,
-    # an unlucky random split could leave one half with significantly fewer
-    # fraud rows — which would make evaluation high-variance.
+    # Stratify preserves the ~0.17% fraud ratio in both splits.
     X = df.drop(columns=[TARGET_COLUMN])
     y = df[TARGET_COLUMN]
     X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=test_size,
-        random_state=seed,
-        stratify=y,
-        shuffle=True,
+        X, y, test_size=test_size, random_state=seed, stratify=y, shuffle=True,
     )
 
     train_df = X_train.assign(**{TARGET_COLUMN: y_train})
@@ -103,17 +90,11 @@ def preprocess(
 
     train_path = out_dir / "train.parquet"
     test_path = out_dir / "test.parquet"
-
-    logger.info("Writing train set to %s", train_path)
     train_df.to_parquet(train_path, engine="pyarrow", compression="snappy", index=False)
-    logger.info("Writing test set to %s", test_path)
     test_df.to_parquet(test_path, engine="pyarrow", compression="snappy", index=False)
 
-    # LEARN: Log the resulting class balance so we can verify stratification
-    # worked. These numbers go into the script's audit trail.
     _log_split_stats(train_df, "TRAIN")
     _log_split_stats(test_df, "TEST")
-
     return train_path, test_path
 
 
@@ -121,25 +102,16 @@ def _log_split_stats(df: pd.DataFrame, label: str) -> None:
     """Log row count, fraud count, and fraud percentage for a split."""
     n = len(df)
     n_fraud = int(df[TARGET_COLUMN].sum())
-    pct = 100.0 * n_fraud / n
-    logger.info("%s: %d rows | fraud=%d (%.4f%%)", label, n, n_fraud, pct)
+    logger.info("%s: %d rows | fraud=%d (%.4f%%)", label, n, n_fraud, 100.0 * n_fraud / n)
 
 
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument(
-        "--test-size",
-        type=float,
-        default=DEFAULT_TEST_SIZE,
-        help=f"Fraction of rows for the test set (default {DEFAULT_TEST_SIZE}).",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_SEED,
-        help=f"Random seed for the split (default {DEFAULT_SEED}).",
-    )
+    parser.add_argument("--test-size", type=float, default=DEFAULT_TEST_SIZE,
+                        help=f"Fraction of rows for the test set (default {DEFAULT_TEST_SIZE}).")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED,
+                        help=f"Random seed for the split (default {DEFAULT_SEED}).")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -153,7 +125,6 @@ def main() -> int:
     except Exception:
         logger.exception("Preprocessing failed.")
         return 1
-
     return 0
 
 

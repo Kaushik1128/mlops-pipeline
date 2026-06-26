@@ -4,8 +4,7 @@ Separation of concerns: train.py LOGS models (every run, good or bad); this
 script PROMOTES the best one. Promotion is a governance decision, not an
 automatic side-effect of training.
 
-Selection metric: PR-AUC (the right headline metric for our 0.17% positive
-rate — see the EDA notebook and Step 5 analysis).
+Selection metric: PR-AUC (the right headline metric for the 0.17% positive rate).
 
 Usage:
     python -m src.models.register
@@ -35,8 +34,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 def find_best_run(client, experiment_id: str, metric: str):
     """Return the FINISHED run with the highest value of `metric`.
 
-    LEARN: We search server-side, ordered by the metric descending, and filter
-    to FINISHED runs only — a crashed/running run shouldn't be promotable.
+    Filters to FINISHED runs only — a crashed/running run shouldn't be promotable.
     """
     runs = client.search_runs(
         experiment_ids=[experiment_id],
@@ -92,25 +90,19 @@ def main() -> int:
         best.info.run_id[:12], model_name, args.metric, score,
     )
 
-    # --- Register the model ---
-    # LEARN: model_uri 'runs:/<run_id>/model' points at the artifact path we
-    # logged in train.py (mlflow.sklearn.log_model used artifact_path="model").
-    # register_model creates the registered model if it doesn't exist, then
-    # adds a new immutable version (v1, v2, ...).
+    # register_model creates the registered model if needed, then adds a new
+    # immutable version. 'runs:/<run_id>/model' is the artifact path train.py logged.
     registered_name = mlflow_cfg["registered_model_name"]
     model_uri = f"runs:/{best.info.run_id}/model"
     logger.info("Registering %s -> '%s'", model_uri, registered_name)
     version = mlflow.register_model(model_uri=model_uri, name=registered_name)
     logger.info("Created version %s of '%s'", version.version, registered_name)
 
-    # --- Alias + tags (the modern MLflow promotion mechanism) ---
-    # LEARN: Aliases replaced the deprecated stage system (None/Staging/
-    # Production). An alias is a movable pointer: `@staging` always points at
-    # whichever version is current staging. The serving layer (Phase 4) loads
-    # `models:/fraud-classifier@staging` and never needs to know the version
-    # number — promote a new version by moving the alias.
+    # An alias is a movable pointer (e.g. @staging): serving loads
+    # `models:/fraud-classifier@staging` and never needs the version number;
+    # promote a new version by moving the alias.
     client.set_registered_model_alias(registered_name, args.alias, version.version)
-    # Tags record WHY this version was promoted — its score and source metric.
+    # Tags record why this version was promoted — its score and source metric.
     client.set_model_version_tag(registered_name, version.version,
                                  "selection_metric", args.metric)
     client.set_model_version_tag(registered_name, version.version,

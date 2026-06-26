@@ -26,10 +26,8 @@ IN_FILE = PROJECT_ROOT / "data" / "processed" / "test.parquet"
 OUT_FILE = PROJECT_ROOT / "data" / "processed" / "test_drifted.parquet"
 TARGET_COLUMN = "Class"
 
-# LEARN: We drift the model's most fraud-informative features (from the EDA:
-# V14, V17, V12, V10) plus log_amount (simulating inflated transaction sizes).
-# Drifting features the model actually relies on is what makes drift dangerous
-# — and clearly detectable.
+# The model's most fraud-informative features plus log_amount — drift here is
+# what actually degrades the model (and what the detector should catch).
 DRIFT_FEATURES = ["V14", "V17", "V12", "V10", "log_amount"]
 
 
@@ -67,9 +65,8 @@ def simulate_drift(
             logger.warning("Skipping unknown column: %s", col)
             continue
         std = df[col].std()
-        # LEARN: new = value*scale + severity*std. The *scale term widens the
-        # distribution; the +severity*std term shifts its center. Both move the
-        # distribution away from the reference so Wasserstein distance grows.
+        # `scale` widens the distribution; `severity * std` shifts its centre —
+        # both move it away from the reference so the drift score grows.
         drifted[col] = drifted[col] * scale + severity * std
         logger.info(
             "Drifted %-10s | mean %.3f -> %.3f (shift=%.1fσ, scale=%.2f)",

@@ -6,7 +6,7 @@ bridge: it pulls models:/fraud-classifier@staging out of MLflow and imports it
 into BentoML, carrying source-run metadata along for traceability.
 
 Run this whenever the @staging alias moves to a new version (e.g. after a
-Phase 6 retrain) to refresh what the service will serve.
+retrain) to refresh what the service will serve.
 
 Usage:
     python -m src.serving.import_model
@@ -27,8 +27,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "configs" / "training.yaml"
 
-# LEARN: BentoML model names allow [a-z0-9_.-]. We use underscores to match
-# BentoML conventions; this is the name the service will reference.
+# The name the service references in BentoML's store.
 BENTO_MODEL_NAME = "fraud_classifier"
 
 
@@ -61,17 +60,14 @@ def main() -> int:
     from mlflow.tracking import MlflowClient
 
     mlflow_cfg = config["mlflow"]
-    # LEARN: Prefer the MLFLOW_TRACKING_URI env var over the config default.
-    # On the host we use http://localhost:5000; inside the Docker network the
-    # serving container sets http://mlflow:5000 (service-name DNS). Same code,
-    # different address depending on who's calling and from where.
+    # Env var wins over the config default: the serving container sets
+    # http://mlflow:5000 (in-network); the host uses http://localhost:5000.
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", mlflow_cfg["tracking_uri"])
     mlflow.set_tracking_uri(tracking_uri)
     logger.info("Using MLflow tracking URI: %s", tracking_uri)
     registered_name = mlflow_cfg["registered_model_name"]
 
-    # LEARN: Resolve the alias to a concrete version so we can record exactly
-    # what we imported (and surface its score in the BentoML metadata).
+    # Resolve the alias to a concrete version to record exactly what was imported.
     client = MlflowClient()
     version = client.get_model_version_by_alias(registered_name, args.alias)
     logger.info(
@@ -79,9 +75,7 @@ def main() -> int:
         registered_name, args.alias, version.version, version.run_id[:12],
     )
 
-    # LEARN: import_model copies the MLflow model artifacts into BentoML's
-    # store and wraps them so BentoML can load/serve them. model_uri uses the
-    # alias form so we always import whatever is currently @staging.
+    # Import whatever is currently behind the alias into BentoML's store.
     model_uri = f"models:/{registered_name}@{args.alias}"
     bento_model = bentoml.mlflow.import_model(
         BENTO_MODEL_NAME,

@@ -20,9 +20,6 @@ jobs:
           cache: pip
 
       - name: Install test dependencies
-        # LEARN: only the minimal test deps — NOT the full requirements.txt.
-        # The tests target pure-function modules with synthetic inputs, so the
-        # heavy/conflicting serving + orchestration deps aren't needed.
         run: pip install -r requirements-test.txt
 
       - name: Run tests
